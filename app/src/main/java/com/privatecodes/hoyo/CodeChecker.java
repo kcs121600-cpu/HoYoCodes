@@ -29,7 +29,7 @@ public final class CodeChecker {
                 if (store.add(item)) added.add(item);
             }
             String errors = String.join(" / ", fetched.errors);
-            store.setCheckResult(added.size(), errors);
+            store.setCheckResult(added.size(), errors, fetched.broadcastStatuses);
         }
         CodeNotifier.notifyNew(app, added);
         return new Result(added.size(), fetched.workingGames, String.join(" / ", fetched.errors));

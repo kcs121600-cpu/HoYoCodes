@@ -7,7 +7,7 @@
 1. GitHub에서 **공개 저장소**를 하나 만듭니다. 예: `myname/HoYoCodes` (이름은 예시). 이 프로젝트를 올립니다. 계정 비밀번호나 HoYo 로그인 정보는 저장소에 올리지 않습니다.
 2. **Android 릴리스 서명키(JKS)**를 한 번 만들고 안전한 장소에 별도 백업합니다. 빌드에 쓸 키가 바뀌면 설치된 앱 위에 업데이트할 수 없습니다. 키를 잃어버리면 업데이트를 못할 수 있습니다.
 3. GitHub 저장소의 **Settings > Secrets and variables > Actions**에 `HOYO_KEYSTORE_B64`, `HOYO_KEYSTORE_PASSWORD`, `HOYO_KEY_ALIAS`, `HOYO_KEY_PASSWORD`를 저장합니다.
-4. `.github/workflows/publish-release.yml`이 포함된 코드를 저장소에 올리고, **Actions > Publish signed APK (manual) > Run workflow**에서 `1.2.0`을 입력합니다. 같은 값으로 `app/build.gradle`의 `versionName`이 설정되어 있어야 합니다. `versionCode`는 다음 버전마다 증가시킵니다.
+4. `.github/workflows/publish-release.yml`이 포함된 코드를 저장소에 올리고, **Actions > Publish signed APK (manual) > Run workflow**에서 `1.2.1`을 입력합니다. 같은 값으로 `app/build.gradle`의 `versionName`이 설정되어 있어야 합니다. `versionCode`는 다음 버전마다 증가시킵니다.
 5. Actions가 성공하면 **Releases**에 서명된 `HoYoCodes-release.apk`가 올라옵니다.
 6. Y700에서 그 APK를 처음 설치합니다. 설치된 앱의 **설정 > GitHub 업데이트 저장소 설정**에 `myname/HoYoCodes`를 입력합니다.
 7. 이후에는 앱이 정기적으로 릴리스의 새 버전을 확인하고, 새 버전이 있으면 **업데이트 알림**을 표시합니다. 알림을 눌러 공식 GitHub 다운로드 링크를 열고 **Android 설치 승인**을 하면 업데이트됩니다.
@@ -41,11 +41,13 @@ Windows PowerShell에서 GitHub Secret으로 등록할 Base64를 생성하려면
 
 ## 방송 코드 추가 수집
 
-기본 수집 API(hoyo-codes 및 Ennead)에 더해 `https://gamecal.nv5.me/api/events?game=starrail`와 `https://gamecal.nv5.me/api/events?game=zzz`를 확인합니다. 이 서드파티 게임 캘린더는 **미요우셔(米游社) 공식 방송 API/공식 계정 포스트를 수집해 방송 코드**와 만료 시각을 제공한다고 문서에 밝힙니다.
+기본 일반 코드 API(hoyo-codes 및 Ennead)는 그대로 사용합니다. 방송 코드는 `https://gamecal.nv5.me/api/events?game=starrail` 및 `https://gamecal.nv5.me/api/events?game=zzz`를 별도로 확인합니다. GameCal 공개 문서는 미요우셔(米游社) 공식 라이브 코드 API와 공식 계정 게시물을 이용한다고 설명하지만, GameCal 자체는 제3자 서비스입니다.
 
-- `:livestream-code:` 식별자가 있는 이벤트만 감지하고, **방송 일정(schedule)은 코드로 오인하지 않습니다**.
+- HTTP 상태와 JSON Content-Type/본문을 확인합니다. 홈페이지 HTML, 리디렉션, 오류 상태, 잘못된 JSON은 코드로 처리하지 않습니다.
+- 게임에 맞는 `starrail:livestream-code:` 또는 `zzz:livestream-code:` 이벤트와 `redeem_codes` 필드만 읽습니다. **방송 일정(schedule)과 일반 문장은 코드로 오인하지 않습니다**.
 - 만료 일시가 이미 지난 이벤트는 추가하지 않습니다.
 - 일반 코드와 동일한 게임+문자열이라면 중복으로 나타나지 않고, 수집 출처를 "방송 한정"으로 표시합니다.
 - 중국 공식 피드 기반이라 **한국/글로벌 리딤코드 적용 가능 여부는 개별 확인**이 필요합니다.
-- 해당 API가 일시적으로 접속 불가하거나 반환 형식이 변경되면 방송 코드를 놓칠 수 있습니다. **현재 제작 환경에서는 실제 API 접속 테스트를 하지 못했습니다.**
+- 앱 화면에 스타레일/젠레스 피드 연결 상태와 hoyo-codes · Ennead · GameCal의 출처별 실패 원인을 표시합니다. 실제 연결 성공은 마지막 검사 결과를 기준으로 합니다.
+- 확인 가능한 대체 방송 코드 응답을 확보하지 못해 다른 방송 출처를 임의 추가하지 않았습니다. GameCal이 유효한 JSON을 주지 않을 때는 일반 코드 수집을 계속하고 방송 코드 피드는 연결 실패로 표시합니다.
 - 최초 기본 검사 주기는 **1시간**으로 설정했습니다. 기존 설치에서 6시간으로 설정한 이력은 유지될 수 있으므로 설정에서 변경하세요. Doze 때문에 실제 실행 시각은 지연될 수 있습니다.

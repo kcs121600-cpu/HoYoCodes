@@ -12,6 +12,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public final class CodeStore extends SQLiteOpenHelper {
     public static final class Item {
@@ -104,14 +105,27 @@ public final class CodeStore extends SQLiteOpenHelper {
             return c.moveToFirst() ? c.getInt(0) : 0;
         }
     }
-    public void setCheckResult(int added, String error) {
-        prefs.edit().putLong("last_checked", System.currentTimeMillis())
+    public void setCheckResult(int added, String error, Map<String, String> broadcastStatuses) {
+        SharedPreferences.Editor editor = prefs.edit()
+                .putLong("last_checked", System.currentTimeMillis())
                 .putString("last_error", error == null ? "" : error)
-                .putInt("last_added", added).apply();
+                .putInt("last_added", added);
+        if (broadcastStatuses != null) {
+            for (Map.Entry<String, String> entry : broadcastStatuses.entrySet()) {
+                if (CodeRules.HSR.equals(entry.getKey()) || CodeRules.ZZZ.equals(entry.getKey())) {
+                    editor.putString("broadcast_status_" + entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        editor.apply();
     }
     public long lastChecked() { return prefs.getLong("last_checked", 0); }
     public String lastError() { return prefs.getString("last_error", ""); }
     public int lastAdded() { return prefs.getInt("last_added", 0); }
+    public String lastBroadcastStatus(String game) {
+        String safe = CodeRules.safeGame(game);
+        return prefs.getString("broadcast_status_" + safe, "검사 전");
+    }
 
     /** Backup includes user status; import preserves USED/REVIEW/EXPIRED on duplicates. */
     public synchronized String exportJson() throws Exception {

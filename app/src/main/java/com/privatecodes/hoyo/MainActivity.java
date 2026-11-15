@@ -346,8 +346,13 @@ public final class MainActivity extends Activity {
         panel.addView(head);
         int interval = CodeScheduler.intervalHours(this);
         panel.addView(text(interval + "시간 간격 · 앱을 열지 않아도 백그라운드 검사", 12, MUTED, false));
-        panel.addView(text("방송 한정 코드 보조 출처 연결됨", 12, BLUE, true));
         try (CodeStore store = new CodeStore(this)) {
+            String hsrBroadcast = store.lastBroadcastStatus(CodeRules.HSR);
+            String zzzBroadcast = store.lastBroadcastStatus(CodeRules.ZZZ);
+            panel.addView(text("방송 코드 · 스타레일: " + hsrBroadcast, 12,
+                    hsrBroadcast.startsWith("연결됨") ? GREEN : Color.rgb(180, 95, 30), false));
+            panel.addView(text("방송 코드 · 젠존제: " + zzzBroadcast, 12,
+                    zzzBroadcast.startsWith("연결됨") ? GREEN : Color.rgb(180, 95, 30), false));
             if (store.lastChecked() > 0) {
                 String time = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
                         .format(new Date(store.lastChecked()));
@@ -566,10 +571,19 @@ public final class MainActivity extends Activity {
     private void showSettings() {
         int hours = CodeScheduler.intervalHours(this);
         String lastError;
-        try (CodeStore store = new CodeStore(this)) { lastError = store.lastError(); }
+        String hsrBroadcast;
+        String zzzBroadcast;
+        try (CodeStore store = new CodeStore(this)) {
+            lastError = store.lastError();
+            hsrBroadcast = store.lastBroadcastStatus(CodeRules.HSR);
+            zzzBroadcast = store.lastBroadcastStatus(CodeRules.ZZZ);
+        }
         String repo = UpdateChecker.configuredRepo(this);
         String msg = "검사 주기: " + hours + "시간 (절전 정책에 따라 지연될 수 있음)\n"
-                + "수집: hoyo-codes · Ennead · 방송 코드 GameCal\n"
+                + "일반 코드 출처: hoyo-codes · Ennead\n"
+                + "방송 출처(GameCal): HTTP·JSON·이벤트 ID·코드 형식 검사\n"
+                + "스타레일 방송 피드: " + hsrBroadcast + "\n"
+                + "젠레스 방송 피드: " + zzzBroadcast + "\n"
                 + "업데이트 저장소: " + (repo.isEmpty() ? "미설정" : repo) + "\n"
                 + "버전: " + BuildConfig.VERSION_NAME + "\n"
                 + "계정 비밀번호·쿠키 저장 안 함\n\n"

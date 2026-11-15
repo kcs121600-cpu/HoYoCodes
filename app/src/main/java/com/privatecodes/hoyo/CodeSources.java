@@ -1,16 +1,14 @@
 package com.privatecodes.hoyo;
 
-import android.content.Context;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -24,45 +22,59 @@ public final class CodeSources {
     public static final class FetchResult {
         public final List<CodeStore.Item> codes = new ArrayList<>();
         public final List<String> errors = new ArrayList<>();
+        public final Map<String, String> broadcastStatuses = new LinkedHashMap<>();
         public int workingGames = 0;
+    }
+
+    private static final class SourceResponse {
+        final String body;
+        SourceResponse(String body) { this.body = body; }
+    }
+
+    private static final class SourceException extends Exception {
+        SourceException(String message) { super(message); }
     }
 
     public static FetchResult fetchAll() {
         FetchResult result = new FetchResult();
         for (String game : new String[]{CodeRules.HSR, CodeRules.ZZZ}) {
             Map<String, CodeStore.Item> merged = new LinkedHashMap<>();
-            boolean success = false;
+            boolean generalSuccess = false;
+
             String primary = "https://hoyo-codes.seria.moe/codes?game=" + game;
             String fallback = "https://api.ennead.cc/mihoyo/"
                     + (CodeRules.HSR.equals(game) ? "starrail" : "zenless") + "/codes";
             for (String endpoint : new String[]{primary, fallback}) {
+                String source = endpoint.contains("seria.moe") ? "hoyo-codes" : "Ennead";
                 try {
-                    String source = endpoint.contains("seria.moe") ? "hoyo-codes" : "Ennead";
                     List<CodeStore.Item> items = parseResponse(game, source, read(endpoint));
                     for (CodeStore.Item item : items) merged.putIfAbsent(item.code, item);
-                    success = true;
+                    generalSuccess = true;
                 } catch (Exception ex) {
-                    result.errors.add(CodeRules.gameLabel(game) + " "
-                            + (endpoint.equals(primary) ? "주 출처" : "보조 출처") + " 오류");
+                    result.errors.add(sourceError(game, source, ex));
                 }
             }
-            // A third, livestream-specific feed derives its events from official
-            // MiYouShe livestream/post endpoints. This is an independent third-party
-            // mirror, not a guaranteed real-time first-party API.
+
+            boolean broadcastSuccess = false;
+            String gameCalName = CodeRules.HSR.equals(game) ? "starrail" : "zzz";
             try {
-                String gameCalName = CodeRules.HSR.equals(game) ? "starrail" : "zzz";
                 List<CodeStore.Item> streamCodes = parseLivestreamEvents(game,
-                        read("https://gamecal.nv5.me/api/events?game=" + gameCalName));
+                        readJson("https://gamecal.nv5.me/api/events?game=" + gameCalName).body);
                 for (CodeStore.Item item : streamCodes) {
-                    // Preserve the livestream label when the general sources have
-                    // already discovered the same code.
+                    // Preserve the livestream label when a general source found the same code.
                     merged.put(item.code, item);
                 }
-                success = true;
+                broadcastSuccess = true;
+                result.broadcastStatuses.put(game, streamCodes.isEmpty()
+                        ? "연결됨 · 현재 유효 방송 코드 없음"
+                        : "연결됨 · 유효 방송 코드 " + streamCodes.size() + "개");
             } catch (Exception ex) {
-                result.errors.add(CodeRules.gameLabel(game) + " 공식 방송 피드 오류");
+                String detail = describe(ex);
+                result.broadcastStatuses.put(game, "연결 안 됨 · " + detail);
+                result.errors.add(CodeRules.gameLabel(game) + " · 방송(GameCal): " + detail);
             }
-            if (success) {
+
+            if (generalSuccess || broadcastSuccess) {
                 result.workingGames++;
                 result.codes.addAll(merged.values());
             }
@@ -70,8 +82,9 @@ public final class CodeSources {
         return result;
     }
 
-    private static String read(String url) throws Exception {
-        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+    /** Keep the two existing general-code feeds' response handling unchanged. */
+    private static String read(String endpoint) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
         conn.setConnectTimeout(7000);
         conn.setReadTimeout(7000);
         conn.setRequestProperty("Accept", "application/json");
@@ -79,23 +92,78 @@ public final class CodeSources {
         conn.setInstanceFollowRedirects(true);
         try {
             int status = conn.getResponseCode();
-            if (status < 200 || status >= 300) throw new IllegalStateException("HTTP " + status);
+            if (status < 200 || status >= 300) throw new SourceException("HTTP " + status + " 오류");
             try (InputStream input = conn.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
                 byte[] buffer = new byte[4096];
                 int n;
                 while ((n = input.read(buffer)) != -1) {
-                    if (output.size() + n > MAX_BYTES) throw new IllegalStateException("Response too large");
+                    if (output.size() + n > MAX_BYTES) throw new SourceException("응답 크기 한도 초과");
                     output.write(buffer, 0, n);
                 }
                 return output.toString(StandardCharsets.UTF_8.name());
             }
-        } finally { conn.disconnect(); }
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    /** Fetches a JSON API response without following redirects to a website fallback. */
+    private static SourceResponse readJson(String endpoint) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection) new URL(endpoint).openConnection();
+        conn.setConnectTimeout(7000);
+        conn.setReadTimeout(7000);
+        conn.setRequestProperty("Accept", "application/json");
+        conn.setRequestProperty("User-Agent", "HoYoCodes-Personal/1.2.1");
+        conn.setInstanceFollowRedirects(false);
+        try {
+            int status = conn.getResponseCode();
+            String contentType = conn.getHeaderField("Content-Type");
+            if (status >= 300 && status < 400) {
+                throw new SourceException("HTTP " + status + " 리디렉션 응답");
+            }
+            if (status < 200 || status >= 300) {
+                throw new SourceException("HTTP " + status + " 오류");
+            }
+            if (!SourceResponseRules.isJsonContentType(contentType)) {
+                throw new SourceException("HTTP " + status + " · JSON 대신 Content-Type="
+                        + SourceResponseRules.safeContentType(contentType));
+            }
+            try (InputStream input = conn.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[4096];
+                int n;
+                while ((n = input.read(buffer)) != -1) {
+                    if (output.size() + n > MAX_BYTES) throw new SourceException("응답 크기 한도 초과");
+                    output.write(buffer, 0, n);
+                }
+                String body = output.toString(StandardCharsets.UTF_8.name());
+                if (!SourceResponseRules.isJsonDocument(body)) {
+                    throw new SourceException("HTTP " + status + " · JSON 본문이 아님");
+                }
+                return new SourceResponse(body);
+            }
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    private static String sourceError(String game, String source, Exception ex) {
+        return CodeRules.gameLabel(game) + " · " + source + ": " + describe(ex);
+    }
+
+    private static String describe(Exception ex) {
+        if (ex instanceof SourceException) return ex.getMessage();
+        Throwable cause = ex;
+        while (cause.getCause() != null && cause.getCause() != cause) cause = cause.getCause();
+        if (cause instanceof UnknownHostException) return "DNS 호스트 조회 실패";
+        if (cause instanceof SocketTimeoutException) return "연결 시간 초과";
+        if (cause instanceof org.json.JSONException) return "JSON 구문 오류";
+        if (ex instanceof IllegalArgumentException) return "JSON 구조 오류";
+        return "네트워크 연결 실패";
     }
 
     /**
-     * GameCal API: explicitly accept ONLY livestream redemption events.
-     * Never extract random uppercase text from a web page, which would cause
-     * false-positive notifications. Reject officially expired code events.
+     * Accept only explicitly typed livestream events, their redeem_codes field,
+     * and a game-matching event ID. Never extract code-like text from page content.
      */
     public static List<CodeStore.Item> parseLivestreamEvents(String game, String json) throws Exception {
         String trimmed = json.trim();
@@ -116,9 +184,11 @@ public final class CodeSources {
         Map<String, CodeStore.Item> found = new LinkedHashMap<>();
         for (int i = 0; i < events.length(); i++) {
             JSONObject event = events.optJSONObject(i);
-            if (event == null) continue;
+            if (event == null || event.optString("id", "").trim().isEmpty()) {
+                throw new IllegalArgumentException("Invalid event object");
+            }
             String id = event.optString("id", "");
-            if (!BroadcastRules.isCodeEvent(id)) continue;
+            if (!BroadcastRules.isCodeEvent(game, id)) continue;
             if (BroadcastRules.expired(event.optString("end_time", ""), now)) continue;
             if (BroadcastRules.tooOld(event.optString("start_time", ""), now)) continue;
             JSONArray codes = event.optJSONArray("redeem_codes");
@@ -128,11 +198,11 @@ public final class CodeSources {
                 String value = raw instanceof JSONObject
                     ? ((JSONObject) raw).optString("code", "")
                     : raw instanceof String ? (String) raw : "";
-                String code = CodeRules.clean(value);
+                String code = BroadcastRules.cleanCode(value);
                 if (!code.isEmpty()) {
-                    String reward = "공식 방송 한정 코드 · 만료 시각은 공식 안내 확인";
+                    String reward = "방송 보상은 게임 내 공지에서 확인하세요";
                     String expiry = event.optString("end_time", "");
-                    if (!expiry.isEmpty()) reward = "방송 한정 · 만료 " + expiry;
+                    if (!expiry.isEmpty()) reward = "방송 코드 · 만료 " + expiry;
                     found.putIfAbsent(code, new CodeStore.Item(game, code, reward, "방송 한정 · GameCal"));
                 }
             }

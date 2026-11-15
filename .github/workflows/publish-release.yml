@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Exact app versionName, e.g. 1.2.0 (no v prefix)"
+        description: "Exact app versionName, e.g. 1.2.1 (no v prefix)"
         required: true
         type: string
 
