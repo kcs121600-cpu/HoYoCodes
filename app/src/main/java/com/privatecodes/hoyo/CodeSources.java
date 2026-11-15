@@ -113,7 +113,7 @@ public final class CodeSources {
         conn.setConnectTimeout(7000);
         conn.setReadTimeout(7000);
         conn.setRequestProperty("Accept", "application/json");
-        conn.setRequestProperty("User-Agent", "HoYoCodes-Personal/1.2.1");
+        conn.setRequestProperty("User-Agent", "HoYoCodes-Personal/1.2.2");
         conn.setInstanceFollowRedirects(false);
         try {
             int status = conn.getResponseCode();
@@ -167,17 +167,47 @@ public final class CodeSources {
      */
     public static List<CodeStore.Item> parseLivestreamEvents(String game, String json) throws Exception {
         String trimmed = json.trim();
-        JSONArray events;
+        if (trimmed.isEmpty()) throw new IllegalArgumentException("Empty response");
+        JSONArray events = null;
         if (trimmed.startsWith("[")) {
             events = new JSONArray(trimmed);
         } else {
             JSONObject root = new JSONObject(trimmed);
-            events = root.optJSONArray("events");
-            if (events == null) {
-                JSONObject data = root.optJSONObject("data");
-                if (data != null) events = data.optJSONArray("events");
+            if (!LivestreamResponseRules.apiCodeIsValid(root.has("code"), root.opt("code"))) {
+                throw new IllegalArgumentException("API code is not successful");
             }
-            if (events == null) throw new IllegalArgumentException("No events array");
+
+            if (root.has("events") && !(root.opt("events") instanceof JSONArray)) {
+                throw new IllegalArgumentException("events must be an array");
+            }
+            JSONArray rootEvents = root.optJSONArray("events");
+            Object rawData = root.opt("data");
+            JSONArray dataArray = rawData instanceof JSONArray ? (JSONArray) rawData : null;
+            JSONObject dataObject = rawData instanceof JSONObject ? (JSONObject) rawData : null;
+            if (root.has("data") && dataArray == null && dataObject == null) {
+                throw new IllegalArgumentException("data must be an array or object");
+            }
+            if (dataObject != null && dataObject.has("events")
+                    && !(dataObject.opt("events") instanceof JSONArray)) {
+                throw new IllegalArgumentException("data.events must be an array");
+            }
+            JSONArray dataEvents = dataObject == null ? null : dataObject.optJSONArray("events");
+
+            LivestreamResponseRules.Layout layout = LivestreamResponseRules.selectLayout(
+                    false, rootEvents != null, dataArray != null, dataEvents != null);
+            switch (layout) {
+                case ROOT_EVENTS:
+                    events = rootEvents;
+                    break;
+                case DATA_ARRAY:
+                    events = dataArray;
+                    break;
+                case DATA_EVENTS:
+                    events = dataEvents;
+                    break;
+                default:
+                    throw new IllegalArgumentException("No supported events array");
+            }
         }
         if (events.length() > 3000) throw new IllegalArgumentException("Too many events");
         long now = System.currentTimeMillis();
