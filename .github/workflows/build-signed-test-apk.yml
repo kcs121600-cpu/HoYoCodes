@@ -53,6 +53,22 @@ jobs:
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
           cp "$apk" HoYoCodes-v1.2.3-device-test.apk
+      - name: Verify compatibility with the current public APK
+        run: |
+          set -euo pipefail
+          previous="$RUNNER_TEMP/HoYoCodes-v1.2.2.apk"
+          curl -fsSL "https://github.com/kcs121600-cpu/HoYoCodes/releases/download/v1.2.2/HoYoCodes-release.apk" -o "$previous"
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          old_meta="$("$aapt" dump badging "$previous" | grep '^package:')"
+          new_meta="$("$aapt" dump badging app/build/outputs/apk/release/app-release.apk | grep '^package:')"
+          test "$old_meta" = "package: name='com.privatecodes.hoyo' versionCode='5' versionName='1.2.2'"
+          test "$new_meta" = "package: name='com.privatecodes.hoyo' versionCode='6' versionName='1.2.3'"
+          old_cert="$("$apksigner" verify --print-certs "$previous" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+          new_cert="$("$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+          test -n "$old_cert"
+          test "$old_cert" = "$new_cert"
+          echo "Package, version order, and signing certificate match."
       - uses: actions/upload-artifact@v4
         with:
           name: HoYoCodes-v1.2.3-signed-device-test
