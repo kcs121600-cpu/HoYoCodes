@@ -29,13 +29,19 @@ public final class CodeNotifier {
         return ((NotificationManager)ctx.getSystemService(Context.NOTIFICATION_SERVICE)).areNotificationsEnabled();
     }
     public static void notifyNew(Context ctx, List<CodeStore.Item> newItems) {
-        if (newItems.isEmpty() || !canNotify(ctx)) return;
+        if (newItems == null || newItems.isEmpty()) return;
+        List<CodeStore.Item> allowedItems = GameNotificationRules.filterNewItems(
+                newItems,
+                CodeNotificationSettings.isEnabled(ctx, CodeRules.HSR),
+                CodeNotificationSettings.isEnabled(ctx, CodeRules.ZZZ),
+                item -> item.game);
+        if (allowedItems.isEmpty() || !canNotify(ctx)) return;
         setup(ctx);
         int hsr = 0, zzz = 0;
-        for (CodeStore.Item item : newItems) {
+        for (CodeStore.Item item : allowedItems) {
             if (CodeRules.HSR.equals(item.game)) hsr++; else zzz++;
         }
-        CodeStore.Item first = newItems.get(0);
+        CodeStore.Item first = allowedItems.get(0);
         String summary = "스타레일 " + hsr + "개 · 젠존제 " + zzz + "개";
         Intent open = new Intent(ctx, MainActivity.class).setAction(MainActivity.ACTION_OPEN_CODE);
         open.putExtra(MainActivity.EXTRA_GAME, first.game);
@@ -51,7 +57,7 @@ public final class CodeNotifier {
 
         Notification notif = new Notification.Builder(ctx, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("새 리딤코드 " + newItems.size() + "개 발견")
+                .setContentTitle("새 리딤코드 " + allowedItems.size() + "개 발견")
                 .setContentText(summary)
                 .setStyle(new Notification.BigTextStyle().bigText(summary + "\n등록하기를 누르면 첫 번째 코드가 입력된 공식 사이트가 열립니다."))
                 .setContentIntent(listIntent)
