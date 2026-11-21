@@ -589,8 +589,12 @@ public final class MainActivity extends Activity {
                 + "계정 비밀번호·쿠키 저장 안 함\n\n"
                 + "최근 수집 오류: " + (lastError.isEmpty() ? "없음" : lastError);
         String[] menu = {"검사 상태 및 출처 보기", "검사 주기 변경", "앱 업데이트 확인", "GitHub 업데이트 저장소 설정", "알림 권한 요청", "JSON 백업 내보내기", "JSON 백업 가져오기", "코드 직접 추가"};
+        String[] expandedMenu = new String[menu.length + 1];
+        System.arraycopy(menu, 0, expandedMenu, 0, 5);
+        expandedMenu[5] = "게임별 새 코드 알림";
+        System.arraycopy(menu, 5, expandedMenu, 6, menu.length - 5);
         new AlertDialog.Builder(this).setTitle("설정")
-                .setItems(menu, (d, choice) -> {
+                .setItems(expandedMenu, (d, choice) -> {
                     switch (choice) {
                         case 0: new AlertDialog.Builder(this).setTitle("자동 검사 상태")
                                 .setMessage(msg).setPositiveButton("확인", null).show(); break;
@@ -598,9 +602,10 @@ public final class MainActivity extends Activity {
                         case 2: checkUpdateNow(); break;
                         case 3: showUpdateRepositoryDialog(); break;
                         case 4: showNotificationSettings(); break;
-                        case 5: exportBackup(); break;
-                        case 6: importBackup(); break;
-                        case 7: showAddDialog(); break;
+                        case 5: showGameNotificationSettings(); break;
+                        case 6: exportBackup(); break;
+                        case 7: importBackup(); break;
+                        case 8: showAddDialog(); break;
                         default: break;
                     }
                 }).setNegativeButton("닫기", null).show();
@@ -681,6 +686,20 @@ public final class MainActivity extends Activity {
             intent.putExtra("android.provider.extra.APP_PACKAGE", getPackageName());
             try { startActivity(intent); } catch (Exception ex) { notice("설정에서 앱 알림을 허용해 주세요"); }
         }
+    }
+    private void showGameNotificationSettings() {
+        String[] labels = {"붕괴: 스타레일 새 코드 알림", "젠레스 존 제로 새 코드 알림"};
+        boolean[] enabled = {
+                CodeNotificationSettings.isEnabled(this, CodeRules.HSR),
+                CodeNotificationSettings.isEnabled(this, CodeRules.ZZZ)
+        };
+        String[] games = {CodeRules.HSR, CodeRules.ZZZ};
+        new AlertDialog.Builder(this)
+                .setTitle("게임별 새 코드 알림")
+                .setMultiChoiceItems(labels, enabled, (dialog, which, isChecked) ->
+                        CodeNotificationSettings.setEnabled(this, games[which], isChecked))
+                .setPositiveButton("완료", null)
+                .show();
     }
     private void exportBackup() {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
